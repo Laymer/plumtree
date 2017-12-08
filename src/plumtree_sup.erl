@@ -30,7 +30,6 @@
 -define(CHILD(I, Type), ?CHILD(I, Type, 5000)).
 
 start_link() ->
-    exit(fuck),
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
