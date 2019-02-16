@@ -131,13 +131,13 @@ start_link() ->
                                              ?DEFAULT_EXCHANGE_TICK_PERIOD),
     PeerService = application:get_env(plumtree, peer_service, partisan_peer_service),
     {ok, Members} = PeerService:members(),
-    plumtree_util:log(debug, "peer sampling service members: ~p", [Members]),
+    logger:log(debug, "peer sampling service members: ~p", [Members]),
     %% the peer service has already sampled the members, we start off
     %% with pure gossip (ie. all members are in the eager push list and lazy
     %% list is empty)
     InitEagers = Members,
     InitLazys = [],
-    plumtree_util:log(debug, "init peers, eager: ~p, lazy: ~p",
+    logger:log(debug, "init peers, eager: ~p, lazy: ~p",
                       [InitEagers, InitLazys]),
     Mods = application:get_env(plumtree, broadcast_mods, []),
     Res = start_link(Members, InitEagers, InitLazys, Mods,
@@ -287,46 +287,46 @@ handle_call({cancel_exchanges, WhichExchanges}, _From, State) ->
 %% @private
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 handle_cast({broadcast, MessageId, Message, Mod}, State) ->
-    plumtree_util:log(debug, "received {broadcast, ~p, Msg, ~p}",
+    logger:log(debug, "received {broadcast, ~p, Msg, ~p}",
                       [MessageId, Mod]),
     State1 = eager_push(MessageId, Message, Mod, State),
     State2 = schedule_lazy_push(MessageId, Mod, State1),
     {noreply, State2};
 handle_cast({broadcast, MessageId, Message, Mod, Round, Root, From}, State) ->
-    plumtree_util:log(debug, "received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
+    logger:log(debug, "received {broadcast, ~p, Msg, ~p, ~p, ~p, ~p}",
                       [MessageId, Mod, Round, Root, From]),
     Valid = Mod:merge(MessageId, Message),
     State1 = handle_broadcast(Valid, MessageId, Message, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({prune, Root, From}, State) ->
-    plumtree_util:log(debug, "received ~p", [{prune, Root, From}]),
-    plumtree_util:log(debug, "moving peer ~p from eager to lazy", [From]),
+    logger:log(debug, "received ~p", [{prune, Root, From}]),
+    logger:log(debug, "moving peer ~p from eager to lazy", [From]),
     State1 = add_lazy(From, Root, State),
     {noreply, State1};
 handle_cast({i_have, MessageId, Mod, Round, Root, From}, State) ->
-    plumtree_util:log(debug, "received ~p", [{i_have, MessageId, Mod, Round, Root, From}]),
+    logger:log(debug, "received ~p", [{i_have, MessageId, Mod, Round, Root, From}]),
     Stale = Mod:is_stale(MessageId),
     State1 = handle_ihave(Stale, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({ignored_i_have, MessageId, Mod, Round, Root, From}, State) ->
-    plumtree_util:log(debug, "received ~p", [{ignored_i_have, MessageId, Mod, Round, Root, From}]),
+    logger:log(debug, "received ~p", [{ignored_i_have, MessageId, Mod, Round, Root, From}]),
     State1 = ack_outstanding(MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({graft, MessageId, Mod, Round, Root, From}, State) ->
-    plumtree_util:log(debug, "received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
+    logger:log(debug, "received ~p", [{graft, MessageId, Mod, Round, Root, From}]),
     Result = Mod:graft(MessageId),
-    plumtree_util:log(debug, "graft(~p): ~p", [MessageId, Result]),
+    logger:log(debug, "graft(~p): ~p", [MessageId, Result]),
     State1 = handle_graft(Result, MessageId, Mod, Round, Root, From, State),
     {noreply, State1};
 handle_cast({update, Members}, State=#state{all_members=BroadcastMembers,
                                             common_eagers=EagerPeers0,
                                             common_lazys=LazyPeers}) ->
-    plumtree_util:log(debug, "received ~p", [{update, Members}]),
+    logger:log(debug, "received ~p", [{update, Members}]),
     CurrentMembers = ordsets:from_list(Members),
     New = ordsets:subtract(CurrentMembers, BroadcastMembers),
     Removed = ordsets:subtract(BroadcastMembers, CurrentMembers),
-    plumtree_util:log(debug, "    new members: ~p", [ordsets:to_list(New)]),
-    plumtree_util:log(debug, "    removed members: ~p", [ordsets:to_list(Removed)]),
+    logger:log(debug, "    new members: ~p", [ordsets:to_list(New)]),
+    logger:log(debug, "    removed members: ~p", [ordsets:to_list(Removed)]),
     State1 = case ordsets:size(New) > 0 of
                  false ->
                      State;
@@ -335,7 +335,7 @@ handle_cast({update, Members}, State=#state{all_members=BroadcastMembers,
                      %% "When a new member is detected, it is simply added to the set
                      %%  of eagerPushPeers"
                      EagerPeers = ordsets:union(EagerPeers0, New),
-                     plumtree_util:log(debug, "    new peers, eager: ~p, lazy: ~p",
+                     logger:log(debug, "    new peers, eager: ~p, lazy: ~p",
                                        [EagerPeers, LazyPeers]),
                      reset_peers(CurrentMembers, EagerPeers, LazyPeers, State)
              end,
@@ -374,7 +374,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 handle_broadcast(false, _MessageId, _Message, Mod, _Round, Root, From, State) -> %% stale msg
     %% remove sender from eager and set as lazy
-    plumtree_util:log(debug, "moving peer ~p from eager to lazy", [From]),
+    logger:log(debug, "moving peer ~p from eager to lazy", [From]),
     State1 = add_lazy(From, Root, State),
     _ = send({prune, Root, myself()}, Mod, From),
     State1;
@@ -405,7 +405,7 @@ handle_graft({ok, Message}, MessageId, Mod, Round, Root, From, State) ->
     _ = send({broadcast, MessageId, Message, Mod, Round, Root, myself()}, Mod, From),
     State1;
 handle_graft({error, Reason}, _MessageId, Mod, _Round, _Root, _From, State) ->
-    lager:error("unable to graft message from ~p. reason: ~p", [Mod, Reason]),
+    logger:log(error,"unable to graft message from ~p. reason: ~p", [Mod, Reason]),
     State.
 
 neighbors_down(Removed, State) ->
@@ -438,7 +438,7 @@ eager_push(MessageId, Message, Mod, State) ->
 
 eager_push(MessageId, Message, Mod, Round, Root, From, State) ->
     Peers = eager_peers(Root, From, State),
-    plumtree_util:log(debug, "eager push to peers: ~p", [Peers]),
+    logger:log(debug, "eager push to peers: ~p", [Peers]),
     _ = send({broadcast, MessageId, Message, Mod, Round, Root, myself()}, Mod, Peers),
     State.
 
@@ -447,7 +447,7 @@ schedule_lazy_push(MessageId, Mod, State) ->
 
 schedule_lazy_push(MessageId, Mod, Round, Root, From, State) ->
     Peers = lazy_peers(Root, From, State),
-    plumtree_util:log(debug, "scheduling lazy push to peers ~p: ~p",
+    logger:log(debug, "scheduling lazy push to peers ~p: ~p",
                [Peers, {MessageId, Mod, Round, Root, From}]),
     add_all_outstanding(MessageId, Mod, Round, Root, Peers, State).
 
@@ -459,7 +459,7 @@ send_lazy(Peer, Messages) ->
         {MessageId, Mod, Round, Root} <- ordsets:to_list(Messages)].
 
 send_lazy(MessageId, Mod, Round, Root, Peer) ->
-    plumtree_util:log(debug, "sending lazy push ~p",
+    logger:log(debug, "sending lazy push ~p",
                [{i_have, MessageId, Mod, Round, Root, myself()}]),
     send({i_have, MessageId, Mod, Round, Root, myself()}, Mod, Peer).
 
@@ -487,7 +487,7 @@ maybe_exchange(_Peer, State=#state{mods=[]}) ->
 exchange(Peer, State=#state{mods=[Mod | Mods], exchanges=Exchanges}) ->
     State1 = case Mod:exchange(Peer) of
                  {ok, Pid} ->
-                     plumtree_util:log(debug, "started ~p exchange with ~p (~p)", [Mod, Peer, Pid]),
+                     logger:log(debug, "started ~p exchange with ~p (~p)", [Mod, Peer, Pid]),
                      Ref = monitor(process, Pid),
                      State#state{exchanges=[{Mod, Peer, Ref, Pid} | Exchanges]};
                  {error, _Reason} ->
@@ -686,7 +686,7 @@ instrument_transmission(Message, Mod) ->
                 Mod:extract_log_type_and_payload(Message)
             catch
                 _:Error ->
-                    lager:info("Couldn't extract log type and payload. Reason ~p", [Error]),
+                    logger:log(error,"Couldn't extract log type and payload. Reason ~p", [Error]),
                     []
             end,
 
