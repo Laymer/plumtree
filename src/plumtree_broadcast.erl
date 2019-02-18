@@ -692,7 +692,9 @@ instrument_transmission(Message, Mod) ->
 
             lists:foreach(
                 fun({Type, Payload}) ->
-                    erlang:apply(Module, Function, Args ++ [Type, Payload])
+                    %% NOTE : Potential performance destroyer of worlds :
+                    % erlang:apply(Module, Function, Args ++ [Type, Payload])
+                    Module:Function([Type, Payload] ++ Args)
                 end,
                 ToLog
             )
